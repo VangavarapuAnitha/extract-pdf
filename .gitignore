@@ -10,3 +10,11 @@ out/
 .idea/
 .DS_Store
 Thumbs.db
+coverage/
+uploads/
+
+# Build output
+build/
+
+# NestJS compiled output
+*.tsbuildinfo
