@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 
 import { createHash } from 'crypto';
@@ -10,7 +11,6 @@ import { mkdir, writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { createCanvas } from '@napi-rs/canvas';
 import { createWorker } from 'tesseract.js';
-
 
 @Injectable()
 export class ReportsService {
@@ -77,7 +77,17 @@ export class ReportsService {
       reportDbId = report.id;
 
       // 10. Extract PDF text using PDF.js first
-      let extractedText = await this.extractPdfText(file.buffer);
+      let extractedText: string;
+
+      try {
+        extractedText = await this.extractPdfText(file.buffer);
+      } catch (error) {
+        console.error('PDF text extraction failed:', error);
+
+        throw new BadRequestException(
+          'The uploaded PDF is corrupted or cannot be read.',
+        );
+      }
 
       // 11. Extract report identifiers
       let reportId = this.extractIdentifier(extractedText, 'Report ID');
@@ -189,12 +199,9 @@ export class ReportsService {
 
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buffer),
-      standardFontDataUrl: join(
-  process.cwd(),
-  'node_modules',
-  'pdfjs-dist',
-  'standard_fonts',
-) + '/',
+      standardFontDataUrl:
+        join(process.cwd(), 'node_modules', 'pdfjs-dist', 'standard_fonts') +
+        '/',
     });
 
     try {
@@ -288,12 +295,9 @@ export class ReportsService {
 
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buffer),
-     standardFontDataUrl: join(
-  process.cwd(),
-  'node_modules',
-  'pdfjs-dist',
-  'standard_fonts',
-) + '/',
+      standardFontDataUrl:
+        join(process.cwd(), 'node_modules', 'pdfjs-dist', 'standard_fonts') +
+        '/',
     });
 
     let ocrWorker: Awaited<ReturnType<typeof createWorker>> | null = null;
@@ -605,5 +609,52 @@ export class ReportsService {
     }
 
     return normalized;
+  }
+
+  async getReportById(id: number) {
+    const report = await this.prisma.report.findUnique({
+      where: { id },
+      include: {
+        parameters: {
+          orderBy: {
+            displayOrder: 'asc',
+          },
+        },
+      },
+    });
+
+    if (!report) {
+      throw new NotFoundException('Report not found');
+    }
+
+    const { filePath, fileHash, parameters, ...reportDetails } = report;
+
+    return {
+      report: reportDetails,
+      parameters,
+    };
+  }
+
+  async getAllReports() {
+    const reports = await this.prisma.report.findMany({
+      where: {
+        status: 'COMPLETED',
+      },
+      select: {
+        id: true,
+        reportId: true,
+        sampleId: true,
+        originalFilename: true,
+        status: true,
+        createdAt: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    return {
+      reports,
+    };
   }
 }

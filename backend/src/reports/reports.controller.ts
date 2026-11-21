@@ -1,10 +1,12 @@
-
 import {
   BadRequestException,
   Controller,
   Post,
   UploadedFile,
   UseInterceptors,
+  Get,
+  Param,
+  ParseIntPipe,
 } from '@nestjs/common';
 
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -32,5 +34,15 @@ export class ReportsController {
     }
 
     return this.reportsService.uploadReport(file);
+  }
+
+  @Get(':id')
+  async getReportById(@Param('id', ParseIntPipe) id: number) {
+    return this.reportsService.getReportById(id);
+  }
+
+  @Get()
+  async getAllReports() {
+    return this.reportsService.getAllReports();
   }
 }
