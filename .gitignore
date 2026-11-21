@@ -18,3 +18,9 @@ build/
 
 # NestJS compiled output
 *.tsbuildinfo
+
+# Prisma AI agent skill files
+backend/.agents/
+backend/.claude/
+backend/.windsurf/
+backend/skills-lock.json
