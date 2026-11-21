@@ -8,6 +8,9 @@ import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { mkdir, writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
+import { createCanvas } from '@napi-rs/canvas';
+import { createWorker } from 'tesseract.js';
+
 
 @Injectable()
 export class ReportsService {
@@ -73,16 +76,46 @@ export class ReportsService {
 
       reportDbId = report.id;
 
-      // 10. Extract PDF text
-      const extractedText = await this.extractPdfText(file.buffer);
+      // 10. Extract PDF text using PDF.js first
+      let extractedText = await this.extractPdfText(file.buffer);
 
       // 11. Extract report identifiers
-      const reportId = this.extractIdentifier(extractedText, 'Report ID');
-      const sampleId = this.extractIdentifier(extractedText, 'Sample ID');
+      let reportId = this.extractIdentifier(extractedText, 'Report ID');
+      let sampleId = this.extractIdentifier(extractedText, 'Sample ID');
 
       // 12. Extract parameters
-      const parameters = this.extractParameters(extractedText);
+      let parameters = this.extractParameters(extractedText);
 
+      // 13. If no parameters are found, try OCR
+      if (parameters.length === 0) {
+        console.log('No report parameters found using PDF.js. Trying OCR...');
+
+        const ocrText = await this.extractPdfTextUsingOcr(file.buffer);
+
+        const ocrReportId = this.extractIdentifier(ocrText, 'Report ID');
+        const ocrSampleId = this.extractIdentifier(ocrText, 'Sample ID');
+        console.log(
+          'OCR TEXT SENT TO PARSER:',
+          JSON.stringify(ocrText.substring(0, 150)),
+        );
+
+        console.log(
+          'OCR PAGE MARKERS:',
+          [...ocrText.matchAll(/--- Page (\d+) ---/g)].length,
+        );
+
+        const ocrParameters = this.extractOcrParameters(ocrText);
+
+        console.log('OCR PARSED PARAMETERS:', ocrParameters);
+
+        reportId = reportId ?? ocrReportId;
+        sampleId = sampleId ?? ocrSampleId;
+        parameters = ocrParameters;
+
+        console.log(`OCR extracted ${parameters.length} parameters.`);
+      }
+
+      // 14. Validate extracted parameters
       if (parameters.length === 0) {
         throw new BadRequestException(
           'No report parameters could be extracted. Please upload a supported lab report PDF.',
@@ -155,7 +188,13 @@ export class ReportsService {
     const pdfData = new Uint8Array(buffer);
 
     const loadingTask = pdfjs.getDocument({
-      data: pdfData,
+      data: new Uint8Array(buffer),
+      standardFontDataUrl: join(
+  process.cwd(),
+  'node_modules',
+  'pdfjs-dist',
+  'standard_fonts',
+) + '/',
     });
 
     try {
@@ -240,6 +279,72 @@ export class ReportsService {
 
       return extractedPages.join('\n\n');
     } finally {
+      await loadingTask.destroy();
+    }
+  }
+
+  private async extractPdfTextUsingOcr(buffer: Buffer): Promise<string> {
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+
+    const loadingTask = pdfjs.getDocument({
+      data: new Uint8Array(buffer),
+     standardFontDataUrl: join(
+  process.cwd(),
+  'node_modules',
+  'pdfjs-dist',
+  'standard_fonts',
+) + '/',
+    });
+
+    let ocrWorker: Awaited<ReturnType<typeof createWorker>> | null = null;
+
+    try {
+      const pdf = await loadingTask.promise;
+
+      // Create one OCR worker and reuse it for all pages.
+      ocrWorker = await createWorker('eng');
+
+      const extractedPages: string[] = [];
+
+      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+        const page = await pdf.getPage(pageNumber);
+
+        // Convert the PDF page into an image.
+        const viewport = page.getViewport({ scale: 2 });
+
+        const canvas = createCanvas(
+          Math.ceil(viewport.width),
+          Math.ceil(viewport.height),
+        );
+
+        const context = canvas.getContext('2d');
+
+        await page.render({
+          canvas: canvas as unknown as HTMLCanvasElement,
+          canvasContext: context as unknown as CanvasRenderingContext2D,
+          viewport,
+        }).promise;
+
+        // Convert the image into a PNG buffer.
+        const imageBuffer = canvas.toBuffer('image/png');
+
+        // Extract text from the image using OCR.
+        const result = await ocrWorker.recognize(imageBuffer);
+
+        console.log(`OCR TEXT - PAGE ${pageNumber}:`);
+        console.log(result.data.text);
+
+        extractedPages.push(`--- Page ${pageNumber} ---\n${result.data.text}`);
+
+        await page.cleanup();
+      }
+
+      return extractedPages.join('\n\n');
+    } finally {
+      if (ocrWorker) {
+        await ocrWorker.terminate();
+      }
+
       await loadingTask.destroy();
     }
   }
@@ -342,6 +447,119 @@ export class ReportsService {
         } else {
           unit = this.normalizeOptionalValue(thirdCell);
           referenceRange = this.normalizeOptionalValue(fourthCell);
+        }
+
+        parameters.push({
+          parameterName,
+          value,
+          unit,
+          referenceRange,
+          displayOrder: displayOrder++,
+          pageNumber,
+        });
+      }
+    }
+
+    return parameters;
+  }
+
+  private extractOcrParameters(text: string) {
+    const parameters: {
+      parameterName: string;
+      value: string;
+      unit: string | null;
+      referenceRange: string | null;
+      displayOrder: number;
+      pageNumber: number;
+    }[] = [];
+
+    const pageMatches = [
+      ...text.matchAll(/--- Page (\d+) ---([\s\S]*?)(?=--- Page \d+ ---|$)/g),
+    ];
+
+    let displayOrder = 1;
+
+    for (const pageMatch of pageMatches) {
+      const pageNumber = Number(pageMatch[1]);
+      const pageText = pageMatch[2];
+
+      const lines = pageText
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+
+      let headerFound = false;
+
+      for (const line of lines) {
+        const normalizedLine = line.toLowerCase();
+
+        // Find the table header.
+        if (
+          normalizedLine.includes('parameter') &&
+          normalizedLine.includes('result')
+        ) {
+          headerFound = true;
+          continue;
+        }
+
+        if (!headerFound) continue;
+
+        // Stop parsing at the report footer.
+        if (
+          normalizedLine.startsWith('note:') ||
+          normalizedLine.startsWith('end of')
+        ) {
+          headerFound = false;
+          continue;
+        }
+
+        const cells = line.split(/\s+/);
+
+        if (cells.length < 2) continue;
+
+        // Find the result value.
+        // Prioritize values such as <150, Positive and Nil
+        // to avoid mistaking numbers in parameter names for results.
+        const specialValueIndex = cells.findIndex((cell) =>
+          /^(?:[<>]=?\d+(?:\.\d+)?|positive|negative|nil|trace|normal|abnormal|present|absent)$/i.test(
+            cell,
+          ),
+        );
+
+        let valueIndex = specialValueIndex;
+
+        // If no special value is found, look for a numeric result.
+        if (valueIndex === -1) {
+          valueIndex = cells.findIndex((cell) => /^\d+(?:\.\d+)?$/.test(cell));
+        }
+
+        // Cannot identify a result value.
+        if (valueIndex <= 0) continue;
+
+        const parameterName = cells.slice(0, valueIndex).join(' ');
+        const value = cells[valueIndex];
+
+        if (!parameterName) continue;
+
+        const remainingCells = cells.slice(valueIndex + 1);
+
+        let unit: string | null = null;
+        let referenceRange: string | null = null;
+
+        // Check whether the last remaining cell is a reference range.
+        if (
+          remainingCells.length > 0 &&
+          this.isReferenceRange(remainingCells[remainingCells.length - 1])
+        ) {
+          referenceRange = this.normalizeOptionalValue(
+            remainingCells[remainingCells.length - 1],
+          );
+
+          unit = this.normalizeOptionalValue(
+            remainingCells.slice(0, -1).join(' '),
+          );
+        } else {
+          unit = this.normalizeOptionalValue(remainingCells.join(' '));
         }
 
         parameters.push({
