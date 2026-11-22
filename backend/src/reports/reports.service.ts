@@ -104,25 +104,14 @@ export class ReportsService {
 
         const ocrReportId = this.extractIdentifier(ocrText, 'Report ID');
         const ocrSampleId = this.extractIdentifier(ocrText, 'Sample ID');
-        console.log(
-          'OCR TEXT SENT TO PARSER:',
-          JSON.stringify(ocrText.substring(0, 150)),
-        );
-
-        console.log(
-          'OCR PAGE MARKERS:',
-          [...ocrText.matchAll(/--- Page (\d+) ---/g)].length,
-        );
 
         const ocrParameters = this.extractOcrParameters(ocrText);
 
-        console.log('OCR PARSED PARAMETERS:', ocrParameters);
-
-        reportId = reportId ?? ocrReportId;
+           reportId = reportId ?? ocrReportId;
         sampleId = sampleId ?? ocrSampleId;
         parameters = ocrParameters;
 
-        console.log(`OCR extracted ${parameters.length} parameters.`);
+         console.log(`OCR extracted ${parameters.length} parameters.`);
       }
 
       // 14. Validate extracted parameters
@@ -212,21 +201,6 @@ export class ReportsService {
       for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
         const page = await pdf.getPage(pageNumber);
         const content = await page.getTextContent();
-
-        console.log(
-          'PDF TEXT ITEMS:',
-          content.items.map((item) => {
-            if ('str' in item && 'transform' in item) {
-              return {
-                text: item.str,
-                x: item.transform[4],
-                y: item.transform[5],
-              };
-            }
-
-            return null;
-          }),
-        );
 
         type PositionedText = {
           text: string;
@@ -334,9 +308,6 @@ export class ReportsService {
 
         // Extract text from the image using OCR.
         const result = await ocrWorker.recognize(imageBuffer);
-
-        console.log(`OCR TEXT - PAGE ${pageNumber}:`);
-        console.log(result.data.text);
 
         extractedPages.push(`--- Page ${pageNumber} ---\n${result.data.text}`);
 
