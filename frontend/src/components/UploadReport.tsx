@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useRef, useState } from "react";
@@ -9,9 +8,7 @@ interface UploadReportProps {
   onUploadSuccess: () => void;
 }
 
-export default function UploadReport({
-  onUploadSuccess,
-}: UploadReportProps) {
+export default function UploadReport({ onUploadSuccess }: UploadReportProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
@@ -53,9 +50,7 @@ export default function UploadReport({
 
       onUploadSuccess();
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Upload failed",
-      );
+      setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
     }
@@ -79,13 +74,13 @@ export default function UploadReport({
             setError("");
             setSuccess("");
           }}
-          className="block w-full text-sm text-slate-600 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:font-medium file:text-blue-700 hover:file:bg-blue-100"
+          className="block w-full cursor-pointer text-sm text-slate-600 file:mr-4 file:cursor-pointer file:rounded-lg file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:font-medium file:text-blue-700 hover:file:bg-blue-100"
         />
 
         <button
           onClick={handleUpload}
           disabled={!selectedFile || uploading}
-          className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+          className="cursor-pointer rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
         >
           {uploading ? "Uploading..." : "Upload PDF"}
         </button>

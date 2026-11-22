@@ -1,6 +1,7 @@
 
 "use client";
 
+import { useState } from "react";
 import { Report } from "@/types/report";
 
 interface ReportsListProps {
@@ -16,6 +17,13 @@ export default function ReportsList({
   onRefresh,
   onSelectReport,
 }: ReportsListProps) {
+  const [openingReportId, setOpeningReportId] = useState<number | null>(null);
+
+  function handleSelectReport(id: number) {
+    setOpeningReportId(id);
+    onSelectReport(id);
+  }
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex items-center justify-between">
@@ -31,7 +39,7 @@ export default function ReportsList({
         <button
           onClick={onRefresh}
           disabled={loading}
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+          className="cursor-pointer rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? "Refreshing..." : "Refresh"}
         </button>
@@ -50,33 +58,51 @@ export default function ReportsList({
           </p>
         )}
 
-        {reports.map((report) => (
-          <button
-            key={report.id}
-            onClick={() => onSelectReport(report.id)}
-            className="flex w-full flex-col gap-2 rounded-lg border border-slate-200 p-4 text-left transition hover:border-blue-300 hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between"
-          >
-            <div className="min-w-0">
-              <p className="truncate font-medium text-slate-800">
-                {report.originalFilename}
-              </p>
+        {reports.map((report) => {
+          const isOpening = openingReportId === report.id;
+          const isNavigating = openingReportId !== null;
 
-              <p className="mt-1 text-xs text-slate-500">
-                Report ID: {report.reportId ?? "Not available"}
-                {" | "}
-                Sample ID: {report.sampleId ?? "Not available"}
-              </p>
+          return (
+            <button
+              key={report.id}
+              onClick={() => handleSelectReport(report.id)}
+              disabled={isNavigating}
+              className="flex w-full cursor-pointer flex-col gap-2 rounded-lg border border-slate-200 p-4 text-left transition hover:border-blue-300 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-70 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="min-w-0">
+                <p className="truncate font-medium text-slate-800">
+                  {report.originalFilename}
+                </p>
 
-              <p className="mt-1 text-xs text-slate-500">
-                Uploaded: {new Date(report.createdAt).toLocaleString()}
-              </p>
-            </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Report ID: {report.reportId ?? "Not available"}
+                  {" | "}
+                  Sample ID: {report.sampleId ?? "Not available"}
+                </p>
 
-            <span className="w-fit rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
-              {report.status}
-            </span>
-          </button>
-        ))}
+                <p className="mt-1 text-xs text-slate-500">
+                  Uploaded: {new Date(report.createdAt).toLocaleString()}
+                </p>
+              </div>
+
+              <div className="flex w-fit items-center gap-3">
+                {isOpening && (
+                  <span
+                    className="flex items-center gap-2 text-xs font-medium text-blue-600"
+                    role="status"
+                  >
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+                    Opening report...
+                  </span>
+                )}
+
+                <span className="w-fit rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
+                  {report.status}
+                </span>
+              </div>
+            </button>
+          );
+        })}
       </div>
     </section>
   );

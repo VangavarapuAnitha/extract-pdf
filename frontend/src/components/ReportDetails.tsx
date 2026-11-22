@@ -16,7 +16,7 @@ export default function ReportDetails({
     <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
       <button
         onClick={onBack}
-        className="mb-6 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-slate-50"
+        className="cursor-pointer mb-6 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-slate-50"
       >
         ← Back to Reports
       </button>
