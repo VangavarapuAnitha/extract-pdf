@@ -247,5 +247,5 @@ All implementation decisions and code should be understood and explainable by th
 
 ## Demo Video
 
-**Demo video:** 
+**Demo video:** `https://drive.google.com/file/d/1DWvgBY_2Xn2e6SbHuU3PEsZFdfBfifkj/view?usp=sharing`
 
